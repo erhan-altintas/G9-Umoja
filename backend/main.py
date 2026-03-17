@@ -354,6 +354,50 @@ def persist_inbound_sms(phone: str, message: str, received_at: Optional[str]) ->
         raise_database_error(error)
 
 
+def ensure_farmer_for_report(phone: str, district: str) -> None:
+    normalized_phone = (phone or "").strip()
+    normalized_district = (district or "").strip()
+
+    if not normalized_phone:
+        return
+
+    if len(normalized_district) < 2:
+        normalized_district = "unknown"
+
+    try:
+        farmer_lookup = (
+            supabase.table("farmers")
+            .select("id,district,active")
+            .eq("phone", normalized_phone)
+            .limit(1)
+            .execute()
+        )
+    except Exception as error:
+        raise_database_error(error)
+
+    if not farmer_lookup.data:
+        try:
+            supabase.table("farmers").insert(
+                {"phone": normalized_phone, "district": normalized_district, "active": True}
+            ).execute()
+        except Exception as error:
+            raise_database_error(error)
+        return
+
+    existing = farmer_lookup.data[0]
+    update_payload: dict[str, Any] = {}
+    if not existing.get("active"):
+        update_payload["active"] = True
+    if existing.get("district") in {None, "", "unknown"} and normalized_district != "unknown":
+        update_payload["district"] = normalized_district
+
+    if update_payload:
+        try:
+            supabase.table("farmers").update(update_payload).eq("id", existing["id"]).execute()
+        except Exception as error:
+            raise_database_error(error)
+
+
 def verify_sms_gateway_signature(messages_raw: str, signature: str) -> bool:
     digest = hmac.new(
         os.getenv("SMS_GATEWAY_API_KEY", "").encode("utf-8"),
@@ -446,6 +490,8 @@ def create_report(report: ReportCreate) -> dict[str, Any]:
     payload["severity"] = severity_value
     payload["report_date"] = report_date
     payload["status"] = "new"
+
+    ensure_farmer_for_report(str(payload.get("phone", "")), str(payload.get("district", "")))
 
     try:
         response = supabase.table("reports").insert(payload).execute()
