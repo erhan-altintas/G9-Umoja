@@ -1,26 +1,15 @@
 function ReportsTable({
+  title = 'Incoming Reports',
+  emptyMessage = 'No reports submitted yet.',
   reports,
-  selectedReportIds,
-  onToggleReport,
-  onSelectAll,
   onVerify,
   onReject,
-  onCreateCombinedAlert,
+  onCreateAlert,
+  onEditReport,
 }) {
-  const selectedCount = selectedReportIds.length
-  const canCreateCombined = selectedCount > 0
-
   return (
     <div className="card">
-      <h2>Incoming Reports</h2>
-      <div className="reports-toolbar">
-        <button type="button" onClick={onSelectAll} disabled={reports.length === 0}>
-          {selectedCount === reports.length && reports.length > 0 ? 'Clear Selection' : 'Select All'}
-        </button>
-        <button type="button" onClick={onCreateCombinedAlert} disabled={!canCreateCombined}>
-          Create Alert from Selected ({selectedCount})
-        </button>
-      </div>
+      <h2>{title}</h2>
 
       <table>
         <thead>
@@ -40,8 +29,8 @@ function ReportsTable({
         <tbody>
           {reports.length === 0 ? (
             <tr>
-              <td colSpan="9">
-                <div className="empty-message">No reports submitted yet.</div>
+              <td colSpan="8">
+                <div className="empty-message">{emptyMessage}</div>
               </td>
             </tr>
           ) : (
@@ -76,6 +65,10 @@ function ReportsTable({
                 </td>
                 <td>
                   <div className="action-buttons">
+                    <button onClick={() => onEditReport(report)}>
+                      Add Details
+                    </button>
+
                     <button
                       onClick={() => onVerify(report.id)}
                       disabled={report.status !== 'Pending'}
@@ -88,6 +81,13 @@ function ReportsTable({
                       disabled={report.status !== 'Pending'}
                     >
                       Reject
+                    </button>
+
+                    <button
+                      onClick={() => onCreateAlert(report)}
+                      disabled={!report.district || !report.crop || !report.symptom}
+                    >
+                      Create Alert
                     </button>
                   </div>
                 </td>
