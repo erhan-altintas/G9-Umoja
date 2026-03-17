@@ -53,7 +53,7 @@ class Alert(AlertCreate):
 class UserCreate(BaseModel):
 	username: str = Field(min_length=3, max_length=50)
 	password: str = Field(min_length=8, max_length=128)
-	role: str = Field(default="staff", min_length=2, max_length=50)
+	role: str = Field(default="reviewer", min_length=2, max_length=50)
 
 
 class UserUpdate(BaseModel):
