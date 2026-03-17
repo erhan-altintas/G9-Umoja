@@ -1,5 +1,7 @@
 import axios from 'axios'
 
+const AUTH_TOKEN_KEY = 'umoja_auth_token'
+
 const envBaseUrl = import.meta.env.VITE_API_BASE_URL
 const isLocalHost = (value) =>
   typeof value === 'string' && /^(https?:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?/i.test(value)
@@ -11,6 +13,26 @@ const resolvedBaseUrl =
 
 const api = axios.create({
   baseURL: resolvedBaseUrl,
+})
+
+export function getStoredToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY)
+}
+
+export function setStoredToken(token) {
+  if (!token) {
+    localStorage.removeItem(AUTH_TOKEN_KEY)
+    return
+  }
+  localStorage.setItem(AUTH_TOKEN_KEY, token)
+}
+
+api.interceptors.request.use((config) => {
+  const token = getStoredToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
 })
 
 export default api

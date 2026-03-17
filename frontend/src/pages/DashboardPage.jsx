@@ -74,6 +74,11 @@ function DashboardPage() {
 
   return (
     <div className="page">
+      <section className="hero-banner card dashboard-hero">
+        <p className="auth-eyebrow">Operations Dashboard</p>
+        <h1>Disease Monitoring Control Center</h1>
+        <p>Review incoming reports, verify field intelligence, and publish district-level alerts.</p>
+      </section>
       <ReportsTable
         reports={reports}
         onVerify={handleVerify}

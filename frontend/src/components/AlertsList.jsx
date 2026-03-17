@@ -15,11 +15,11 @@ function AlertsList({ alerts }) {
               <strong>Message:</strong> {alert.message}
             </p>
             <p>
-              <strong>Date:</strong> {alert.date}
+              <strong>Date:</strong> {alert.alert_date || alert.date}
             </p>
             <p>
               <strong>Status:</strong>{' '}
-              <span className="status-badge status-sent">{alert.status}</span>
+              <span className={`status-badge status-${String(alert.status || '').toLowerCase()}`}>{alert.status}</span>
             </p>
           </div>
         ))
