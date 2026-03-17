@@ -124,9 +124,11 @@ class ReportCreate(BaseModel):
 def format_report(record: dict[str, Any]) -> dict[str, Any]:
     status_value = str(record.get("status", "pending")).lower()
     ui_status = {
-        "pending": "Pending",
-        "verified": "Verified",
+        "new": "Pending",
+        "classified": "Pending",
+        "approved": "Verified",
         "rejected": "Rejected",
+        "resolved": "Verified",
     }.get(status_value, status_value.title())
 
     return {
@@ -198,9 +200,9 @@ def receive_inbound_sms(payload: InboundSMS) -> dict[str, Any]:
         "symptom": payload.message,   # raw SMS text until staff parses it
         "district": "",
         "crop": "",
-        "severity": "unknown",
+        "severity": None,
         "report_date": payload.received_at or datetime.date.today().isoformat(),
-        "status": "pending",
+        "status": "new",
     }
     try:
         supabase.table("reports").insert(record).execute()
@@ -214,8 +216,15 @@ def receive_inbound_sms(payload: InboundSMS) -> dict[str, Any]:
 def create_report(report: ReportCreate) -> dict[str, Any]:
     payload = report.model_dump()
     report_date = payload.pop("date", None) or datetime.date.today().isoformat()
+    symptom_text = payload.get("symptom", "")
+    severity_value = str(payload.get("severity", "low")).strip().lower()
+    if severity_value not in {"low", "medium", "high"}:
+        severity_value = "low"
+
+    payload["raw_message"] = symptom_text
+    payload["severity"] = severity_value
     payload["report_date"] = report_date
-    payload["status"] = "pending"
+    payload["status"] = "new"
 
     try:
         response = supabase.table("reports").insert(payload).execute()
@@ -243,7 +252,7 @@ def verify_report(report_id: int) -> dict[str, Any]:
     get_single_record("reports", report_id)
 
     try:
-        response = supabase.table("reports").update({"status": "verified"}).eq("id", report_id).execute()
+        response = supabase.table("reports").update({"status": "approved"}).eq("id", report_id).execute()
     except Exception as error:
         raise_database_error(error)
 
