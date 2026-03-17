@@ -41,10 +41,6 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
 }
 
 .sync-banner {
@@ -55,28 +51,6 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.queue-clear-btn,
-.queue-resume-btn {
-  padding: 6px 10px;
-  font-size: 0.78rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.36);
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-}
-
-.queue-clear-btn {
-  width: 28px;
-  height: 28px;
-  line-height: 1;
-  padding: 0;
-  font-size: 1rem;
 }
 
 a {
@@ -379,20 +353,6 @@ tbody tr:hover td {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-}
-
-.reports-toolbar {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.reports-toolbar button {
-  background: rgba(27, 95, 142, 0.1);
-  color: #195882;
-  border: 1px solid rgba(27, 95, 142, 0.32);
-  padding: 9px 11px;
-  font-size: 0.8rem;
 }
 
 .action-buttons button {

@@ -9,7 +9,7 @@ from urllib.parse import parse_qs
 from typing import Any, Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from postgrest.exceptions import APIError
 from supabase import Client, create_client
@@ -226,9 +226,6 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
     role: str = "reviewer"
-
-class AlertSendRequest(AlertCreate):
-    report_ids: list[int] = Field(default_factory=list)
 
 
 def format_report(record: dict[str, Any]) -> dict[str, Any]:
@@ -660,7 +657,7 @@ def reject_report(report_id: int, authorization: Optional[str] = Header(default=
 # ---------------------------------------------------------------------------
 
 @app.post("/alerts/send", response_model=Alert, status_code=status.HTTP_201_CREATED)
-def send_alert(alert: AlertSendRequest, authorization: Optional[str] = Header(default=None, alias="Authorization")) -> dict[str, Any]:
+def send_alert(alert: AlertCreate, authorization: Optional[str] = Header(default=None, alias="Authorization")) -> dict[str, Any]:
     """
     Creates an alert record, sends an SMS to every active farmer in the
     district via the SMS Gateway API, then updates the alert status and
@@ -682,32 +679,6 @@ def send_alert(alert: AlertSendRequest, authorization: Optional[str] = Header(de
 
     phone_numbers = [f["phone"] for f in active_farmers]
 
-    if alert.report_ids:
-        try:
-            report_rows = (
-                supabase.table("reports")
-                .select("id,district")
-                .in_("id", alert.report_ids)
-                .execute()
-            )
-        except Exception as error:
-            raise_database_error(error)
-
-        found_ids = {row.get("id") for row in (report_rows.data or [])}
-        if found_ids != set(alert.report_ids):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more selected reports do not exist")
-
-        mismatched = [
-            row.get("id")
-            for row in (report_rows.data or [])
-            if str(row.get("district", "")).strip().lower() != alert.district.strip().lower()
-        ]
-        if mismatched:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Selected reports must belong to the same district as the alert",
-            )
-
     # Send SMS (best-effort: we record the alert even if gateway is down)
     sms_success = False
     if phone_numbers and sms_client.configured:
@@ -719,7 +690,6 @@ def send_alert(alert: AlertSendRequest, authorization: Optional[str] = Header(de
 
     final_status = "sent" if sms_success else "draft"
     payload = alert.model_dump(mode="json")
-    payload.pop("report_ids", None)
     payload["target_count"] = len(phone_numbers)
     payload["status"] = final_status
     payload["created_by"] = current_user["username"]
@@ -728,12 +698,6 @@ def send_alert(alert: AlertSendRequest, authorization: Optional[str] = Header(de
         db_response = supabase.table("alerts").insert(payload).execute()
     except Exception as error:
         raise_database_error(error)
-
-    if alert.report_ids:
-        try:
-            supabase.table("reports").delete().in_("id", alert.report_ids).execute()
-        except Exception as error:
-            raise_database_error(error)
 
     return db_response.data[0]
 

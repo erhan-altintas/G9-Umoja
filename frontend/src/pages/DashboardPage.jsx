@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import api from '../services/api'
 import ReportsTable from '../components/ReportsTable'
 import AlertsList from '../components/AlertsList'
@@ -120,11 +120,9 @@ function DashboardPage() {
 
       {alertReport && (
         <CreateAlertModal
-          reports={selectedReports}
-          onClose={() => setIsModalOpen(false)}
-          onSend={handleSendCombinedAlert}
-          sending={modalSending}
-          error={modalError}
+          report={alertReport}
+          onClose={() => setAlertReport(null)}
+          onSent={handleAlertSent}
         />
       )}
     </div>
