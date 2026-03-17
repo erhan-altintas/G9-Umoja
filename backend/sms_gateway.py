@@ -26,6 +26,10 @@ class SMSGatewayClient:
         return bool(self.base_url and self.api_key and self.device_ids)
 
     def _send_url(self) -> str:
+        if self.base_url.endswith("/api.php"):
+            return self.base_url.replace("/api.php", "/services/send.php")
+        if self.base_url.endswith("/api/v1"):
+            return self.base_url.replace("/api/v1", "/services/send.php")
         if self.base_url.endswith("/services"):
             return f"{self.base_url}/send.php"
         if self.base_url.endswith("/services/send.php"):

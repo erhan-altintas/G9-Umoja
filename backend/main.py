@@ -4,10 +4,10 @@ import hashlib
 import hmac
 import json
 import os
-import time
+from urllib.parse import parse_qs
 from typing import Any, Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Response, status
+from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from postgrest.exceptions import APIError
@@ -320,47 +320,116 @@ class InboundSMS(BaseModel):
     received_at: Optional[str] = None
 
 
-@app.post("/sms/inbound", status_code=status.HTTP_200_OK)
-def receive_inbound_sms(payload: InboundSMS) -> dict[str, Any]:
-    """
-    Webhook called by the SMS Gateway App for every incoming SMS.
-        - Upserts the farmer (creates if unknown, otherwise leaves existing record).
-        - Saves the raw SMS as a pending report in the `reports` table.
-            Staff manually fills in crop/district/severity during review.
-    """
+def persist_inbound_sms(phone: str, message: str, received_at: Optional[str]) -> None:
     # Ensure farmer exists (insert only if phone not found)
     try:
         farmer_lookup = (
             supabase.table("farmers")
             .select("id")
-            .eq("phone", payload.phone)
+            .eq("phone", phone)
             .limit(1)
             .execute()
         )
         if not farmer_lookup.data:
             supabase.table("farmers").insert(
-                {"phone": payload.phone, "district": "unknown", "active": True}
+                {"phone": phone, "district": "unknown", "active": True}
             ).execute()
     except Exception as error:
         raise_database_error(error)
 
     # Save raw SMS as a pending report — structured fields filled in by staff later
     record = {
-        "phone": payload.phone,
-        "raw_message": payload.message,
-        "symptom": payload.message,   # raw SMS text until staff parses it
+        "phone": phone,
+        "raw_message": message,
+        "symptom": message,
         "district": "",
         "crop": "",
-        "severity": None,
-        "report_date": payload.received_at or datetime.date.today().isoformat(),
-        "status": "new",
+        "severity": "low",
+        "report_date": received_at or datetime.date.today().isoformat(),
     }
     try:
         supabase.table("reports").insert(record).execute()
     except Exception as error:
         raise_database_error(error)
 
-    return {"received": True}
+
+def verify_sms_gateway_signature(messages_raw: str, signature: str) -> bool:
+    digest = hmac.new(
+        os.getenv("SMS_GATEWAY_API_KEY", "").encode("utf-8"),
+        messages_raw.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    expected = base64.b64encode(digest).decode("utf-8")
+    return hmac.compare_digest(expected, signature)
+
+
+@app.post("/sms/inbound", status_code=status.HTTP_200_OK)
+async def receive_inbound_sms(
+    request: Request,
+    x_sg_signature: str | None = Header(default=None, alias="X-SG-SIGNATURE"),
+) -> dict[str, Any]:
+    """
+    Webhook called by the SMS Gateway App for every incoming SMS.
+    Supports two formats:
+    1) Real SMS Gateway webhook (form field `messages` + `X-SG-SIGNATURE`)
+    2) Direct JSON testing payload { phone, message, received_at }
+    """
+    try:
+        raw_body = (await request.body()).decode("utf-8")
+    except Exception as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid request body: {error}") from error
+
+    form_params = parse_qs(raw_body, keep_blank_values=True)
+    messages_raw = form_params.get("messages", [None])[0]
+
+    if messages_raw is not None:
+        if not x_sg_signature:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing X-SG-SIGNATURE header")
+
+        if not verify_sms_gateway_signature(messages_raw, x_sg_signature):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Signature mismatch")
+
+        try:
+            messages = json.loads(messages_raw)
+        except json.JSONDecodeError as error:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid messages JSON: {error}") from error
+
+        if not isinstance(messages, list):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="messages must be a JSON array")
+
+        processed = 0
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            phone = message.get("number")
+            text = message.get("message")
+            received_at = message.get("sentDate") or message.get("deliveredDate")
+            if phone and text:
+                persist_inbound_sms(str(phone), str(text), str(received_at) if received_at else None)
+                processed += 1
+
+        return {"received": True, "count": processed}
+
+    # Fallback for local/dev testing with JSON payload
+    try:
+        json_payload = json.loads(raw_body or "{}")
+    except json.JSONDecodeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported payload. Send form field 'messages' or JSON {phone,message}",
+        ) from error
+
+    try:
+        payload = InboundSMS(**json_payload)
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid JSON payload: {error}",
+        ) from error
+
+    persist_inbound_sms(payload.phone, payload.message, payload.received_at)
+
+    return {"received": True, "count": 1}
 
 
 @app.post("/reports", status_code=status.HTTP_201_CREATED)
@@ -461,13 +530,13 @@ def send_alert(alert: AlertCreate) -> dict[str, Any]:
     sms_success = False
     if phone_numbers and sms_client.configured:
         try:
-            sms_client.send_bulk(phone_numbers, alert.message)
-            sms_success = True
+            send_results = sms_client.send_bulk(phone_numbers, alert.message)
+            sms_success = any("error" not in result for result in send_results)
         except Exception:  # noqa: BLE001
             sms_success = False
 
-    final_status = "sent" if sms_success else "failed"
-    payload = alert.model_dump()
+    final_status = "sent" if sms_success else "draft"
+    payload = alert.model_dump(mode="json")
     payload["target_count"] = len(phone_numbers)
     payload["status"] = final_status
 
@@ -547,9 +616,8 @@ def get_alert(alert_id: int) -> dict[str, Any]:
 
 
 @app.post("/alerts", response_model=Alert, status_code=status.HTTP_201_CREATED)
-def create_alert(alert: AlertCreate, authorization: Optional[str] = Header(default=None, alias="Authorization")) -> dict[str, Any]:
-    current_user = require_auth(authorization)
-    payload = alert.model_dump()
+def create_alert(alert: AlertCreate) -> dict[str, Any]:
+    payload = alert.model_dump(mode="json")
     payload["target_count"] = count_active_farmers(payload["district"])
     payload["created_by"] = current_user["username"]
 
@@ -563,7 +631,7 @@ def create_alert(alert: AlertCreate, authorization: Optional[str] = Header(defau
 
 @app.patch("/alerts/{alert_id}", response_model=Alert)
 def update_alert(alert_id: int, alert: AlertUpdate) -> dict[str, Any]:
-    payload = alert.model_dump(exclude_none=True)
+    payload = alert.model_dump(exclude_none=True, mode="json")
     if not payload:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No alert fields provided")
 
