@@ -1,38 +1,18 @@
-import { useEffect, useState } from 'react'
-import api from '../services/api'
+import { useEffect, useMemo, useState } from 'react'
 
-function CreateAlertModal({ report, onClose, onSent }) {
+function CreateAlertModal({ reports, onClose, onSend, sending = false, error = '' }) {
   const today = new Date().toISOString().split('T')[0]
-  const district = report?.district || ''
-
-  const defaultMessage = report
-    ? `Warning for ${report.district}: a possible ${report.crop} disease has been reported. Symptom observed: "${report.symptom}". Please inspect your crops and contact your local agricultural officer immediately.`
-    : ''
-
-  const [message, setMessage] = useState(defaultMessage)
+  const [message, setMessage] = useState('')
   const [alertDate, setAlertDate] = useState(today)
-  const [farmerCount, setFarmerCount] = useState(null)
-  const [loadingCount, setLoadingCount] = useState(true)
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (!district) {
-      setLoadingCount(false)
-      return
-    }
-    setLoadingCount(true)
-    api
-      .get('/farmers')
-      .then((res) => {
-        const active = (res.data || []).filter(
-          (f) => f.district?.toLowerCase() === district.toLowerCase() && f.active,
-        )
-        setFarmerCount(active.length)
-      })
-      .catch(() => setFarmerCount(null))
-      .finally(() => setLoadingCount(false))
-  }, [district])
+  const selectedReports = reports || []
+  const districts = useMemo(
+    () => [...new Set(selectedReports.map((item) => String(item.district || '').trim()))],
+    [selectedReports],
+  )
+  const district = districts.length === 1 ? districts[0] : ''
+  const invalidSelection = selectedReports.length === 0 || !district
+  const reportIds = selectedReports.map((item) => item.id)
 
   // Close on Escape key
   useEffect(() => {
@@ -45,28 +25,21 @@ function CreateAlertModal({ report, onClose, onSent }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setSending(true)
-    setError('')
-    try {
-      await api.post('/alerts/send', {
-        district,
-        message,
-        alert_date: alertDate,
-      })
-      onSent()
-      onClose()
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send alert. Please try again.')
-    } finally {
-      setSending(false)
+    if (invalidSelection) {
+      return
     }
+
+    await onSend({
+      district,
+      message,
+      alert_date: alertDate,
+      status: 'draft',
+      created_by: 'system',
+      report_ids: reportIds,
+    })
   }
 
-  const sendLabel = sending
-    ? 'Sending…'
-    : farmerCount !== null && farmerCount > 0
-    ? `Send to ${farmerCount} Farmer${farmerCount !== 1 ? 's' : ''}`
-    : 'Send Alert'
+  const sendLabel = sending ? 'Sending…' : `Send Combined Alert (${selectedReports.length})`
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -75,7 +48,7 @@ function CreateAlertModal({ report, onClose, onSent }) {
         <div className="modal-header">
           <div>
             <p className="modal-eyebrow">District SMS Alert</p>
-            <h2>Send Alert to {district}</h2>
+            <h2>{district ? `Send Alert to ${district}` : 'Selected reports must be in one district'}</h2>
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close modal">
             ×
@@ -84,19 +57,28 @@ function CreateAlertModal({ report, onClose, onSent }) {
 
         {/* Body / Form */}
         <form onSubmit={handleSubmit} className="modal-body">
-          {/* Source report badge */}
-          {report && (
-            <div className="modal-source">
-              <span className="modal-source-label">Based on report</span>
-              <span className="modal-source-detail">
-                {report.crop} · {report.symptom} · Severity: {report.severity}
+          <div className="modal-source">
+            <span className="modal-source-label">Selected reports</span>
+            <span className="modal-source-detail">{selectedReports.length} report(s) selected</span>
+            {selectedReports.slice(0, 5).map((item) => (
+              <span key={item.id} className="modal-source-detail">
+                #{item.id} · {item.crop || 'Unknown crop'} · {item.symptom || 'No symptom text'}
               </span>
-            </div>
-          )}
+            ))}
+            {selectedReports.length > 5 && (
+              <span className="modal-source-detail">+{selectedReports.length - 5} more…</span>
+            )}
+          </div>
 
           <div className="form-group">
             <label htmlFor="alert-district">District</label>
-            <input id="alert-district" type="text" value={district} readOnly className="input-readonly" />
+            <input
+              id="alert-district"
+              type="text"
+              value={district || 'Multiple districts selected'}
+              readOnly
+              className="input-readonly"
+            />
           </div>
 
           <div className="form-group">
@@ -125,29 +107,10 @@ function CreateAlertModal({ report, onClose, onSent }) {
             />
           </div>
 
-          {/* Recipient preview */}
-          {!loadingCount && farmerCount !== null && farmerCount > 0 && (
-            <div className="modal-preview">
-              <span className="preview-icon">📨</span>
-              <p>
-                This SMS will be sent to{' '}
-                <strong>
-                  {farmerCount} active farmer{farmerCount !== 1 ? 's' : ''}
-                </strong>{' '}
-                registered in <strong>{district}</strong>.
-              </p>
-            </div>
-          )}
-
-          {!loadingCount && farmerCount === 0 && (
+          {invalidSelection && (
             <div className="modal-warning">
-              ⚠ No active farmers are registered in <strong>{district}</strong>. The alert will be
-              saved but no SMS will be sent.
+              Select one or more reports from the same district to create a combined alert.
             </div>
-          )}
-
-          {loadingCount && (
-            <div className="modal-loading-count">Looking up farmers in {district}…</div>
           )}
 
           {error && <div className="error-message">{error}</div>}
@@ -157,7 +120,7 @@ function CreateAlertModal({ report, onClose, onSent }) {
             <button type="button" className="btn-secondary" onClick={onClose} disabled={sending}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary" disabled={sending || loadingCount}>
+            <button type="submit" className="btn-primary" disabled={sending || invalidSelection || !message.trim()}>
               {sendLabel}
             </button>
           </div>

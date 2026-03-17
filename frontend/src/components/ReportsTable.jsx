@@ -14,6 +14,7 @@ function ReportsTable({
       <table>
         <thead>
           <tr>
+            <th>Select</th>
             <th>Phone</th>
             <th>District</th>
             <th>Crop</th>
@@ -35,6 +36,14 @@ function ReportsTable({
           ) : (
             reports.map((report) => (
               <tr key={report.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedReportIds.includes(report.id)}
+                    onChange={() => onToggleReport(report.id)}
+                    aria-label={`Select report ${report.id}`}
+                  />
+                </td>
                 <td>{report.phone}</td>
                 <td>{report.district}</td>
                 <td>{report.crop}</td>
