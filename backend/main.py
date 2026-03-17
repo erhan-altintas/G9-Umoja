@@ -668,7 +668,6 @@ def get_alert(alert_id: int) -> dict[str, Any]:
 def create_alert(alert: AlertCreate) -> dict[str, Any]:
     payload = alert.model_dump(mode="json")
     payload["target_count"] = count_active_farmers(payload["district"])
-    payload["created_by"] = current_user["username"]
 
     try:
         response = supabase.table("alerts").insert(payload).execute()

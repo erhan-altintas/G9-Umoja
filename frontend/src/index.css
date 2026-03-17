@@ -33,6 +33,26 @@ body {
   min-height: 100vh;
 }
 
+.offline-banner {
+  background: #7a3c00;
+  color: #fff;
+  text-align: center;
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.sync-banner {
+  background: var(--brand);
+  color: #fff;
+  text-align: center;
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
 a {
   color: inherit;
 }
