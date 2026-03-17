@@ -245,6 +245,7 @@ def format_report(record: dict[str, Any]) -> dict[str, Any]:
         "crop": record.get("crop", ""),
         "symptom": record.get("symptom", ""),
         "raw_message": record.get("raw_message", ""),
+        "source": classify_report_source(record),
         "severity": record.get("severity", "Low"),
         "date": record.get("date") or record.get("report_date"),
         "status": ui_status,
@@ -420,6 +421,49 @@ def verify_sms_gateway_signature(messages_raw: str, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def is_incoming_gateway_message(message: dict[str, Any]) -> bool:
+    type_value = str(message.get("type", "")).strip().lower()
+    direction_value = str(message.get("direction", "")).strip().lower()
+    folder_value = str(message.get("folder", "")).strip().lower()
+
+    if type_value in {"outgoing", "sent", "out", "outbox"}:
+        return False
+    if direction_value in {"outgoing", "sent", "out"}:
+        return False
+    if folder_value in {"outbox", "sent"}:
+        return False
+
+    if type_value in {"incoming", "received", "in", "inbox"}:
+        return True
+    if direction_value in {"incoming", "received", "in"}:
+        return True
+    if folder_value == "inbox":
+        return True
+
+    has_received_date = bool(message.get("receivedDate"))
+    has_sent_or_delivered = bool(message.get("sentDate") or message.get("deliveredDate"))
+    if has_received_date:
+        return True
+    if has_sent_or_delivered:
+        return False
+
+    return True
+
+
+def classify_report_source(record: dict[str, Any]) -> str:
+    raw_message = str(record.get("raw_message") or "")
+    symptom = str(record.get("symptom") or "")
+    has_structured_fields = bool(str(record.get("district") or "").strip() and str(record.get("crop") or "").strip())
+
+    if raw_message.startswith("[ONLINE]"):
+        return "online"
+    if has_structured_fields and raw_message and raw_message.strip() == symptom.strip():
+        return "online"
+    if raw_message:
+        return "sms"
+    return "online"
+
+
 @app.post("/sms/inbound", status_code=status.HTTP_200_OK)
 async def receive_inbound_sms(
     request: Request,
@@ -458,9 +502,11 @@ async def receive_inbound_sms(
         for message in messages:
             if not isinstance(message, dict):
                 continue
+            if not is_incoming_gateway_message(message):
+                continue
             phone = message.get("number")
             text = message.get("message")
-            received_at = message.get("sentDate") or message.get("deliveredDate")
+            received_at = message.get("receivedDate") or message.get("sentDate") or message.get("deliveredDate")
             if phone and text:
                 persist_inbound_sms(str(phone), str(text), str(received_at) if received_at else None)
                 processed += 1
@@ -498,7 +544,7 @@ def create_report(report: ReportCreate) -> dict[str, Any]:
     if severity_value not in {"low", "medium", "high"}:
         severity_value = "low"
 
-    payload["raw_message"] = symptom_text
+    payload["raw_message"] = f"[ONLINE] {symptom_text}"
     payload["severity"] = severity_value
     payload["report_date"] = report_date
     payload["status"] = "new"

@@ -1,7 +1,15 @@
-function ReportsTable({ reports, onVerify, onReject, onCreateAlert, onEditReport }) {
+function ReportsTable({
+  title = 'Incoming Reports',
+  emptyMessage = 'No reports submitted yet.',
+  reports,
+  onVerify,
+  onReject,
+  onCreateAlert,
+  onEditReport,
+}) {
   return (
     <div className="card">
-      <h2>Incoming Reports</h2>
+      <h2>{title}</h2>
 
       <table>
         <thead>
@@ -21,7 +29,7 @@ function ReportsTable({ reports, onVerify, onReject, onCreateAlert, onEditReport
           {reports.length === 0 ? (
             <tr>
               <td colSpan="8">
-                <div className="empty-message">No reports submitted yet.</div>
+                <div className="empty-message">{emptyMessage}</div>
               </td>
             </tr>
           ) : (
@@ -66,7 +74,10 @@ function ReportsTable({ reports, onVerify, onReject, onCreateAlert, onEditReport
                       Reject
                     </button>
 
-                    <button onClick={() => onCreateAlert(report)}>
+                    <button
+                      onClick={() => onCreateAlert(report)}
+                      disabled={!report.district || !report.crop || !report.symptom}
+                    >
                       Create Alert
                     </button>
                   </div>
