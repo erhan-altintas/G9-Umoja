@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import api from '../services/api'
 import ReportsTable from '../components/ReportsTable'
 import AlertsList from '../components/AlertsList'
+import CreateAlertModal from '../components/CreateAlertModal'
 
 function DashboardPage() {
   const [reports, setReports] = useState([])
   const [alerts, setAlerts] = useState([])
+  const [alertReport, setAlertReport] = useState(null)
 
   async function fetchReports() {
     try {
@@ -56,21 +58,14 @@ function DashboardPage() {
     }
   }
 
-  async function handleCreateAlert(report) {
-  try {
-    await api.post('/alerts', {
-      district: report.district,
-      message: `Warning for ${report.district}: possible ${report.crop} disease reported. Symptom: ${report.symptom}.`,
-      alert_date: new Date().toISOString().split('T')[0],
-    })
+  function handleCreateAlert(report) {
+    setAlertReport(report)
+  }
 
+  function handleAlertSent() {
     fetchAlerts()
     fetchReports()
-
-  } catch (error) {
-    console.error('Error creating alert:', error)
   }
-}
 
   return (
     <div className="page">
@@ -86,6 +81,14 @@ function DashboardPage() {
         onCreateAlert={handleCreateAlert}
       />
       <AlertsList alerts={alerts} />
+
+      {alertReport && (
+        <CreateAlertModal
+          report={alertReport}
+          onClose={() => setAlertReport(null)}
+          onSent={handleAlertSent}
+        />
+      )}
     </div>
   )
 }
