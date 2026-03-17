@@ -436,12 +436,13 @@ def reject_report(report_id: int, authorization: Optional[str] = Header(default=
 # ---------------------------------------------------------------------------
 
 @app.post("/alerts/send", response_model=Alert, status_code=status.HTTP_201_CREATED)
-def send_alert(alert: AlertCreate) -> dict[str, Any]:
+def send_alert(alert: AlertCreate, authorization: Optional[str] = Header(default=None, alias="Authorization")) -> dict[str, Any]:
     """
     Creates an alert record, sends an SMS to every active farmer in the
     district via the SMS Gateway API, then updates the alert status and
     target_count in Supabase.
     """
+    current_user = require_auth(authorization)
     active_farmers: list[dict[str, Any]] = []
     try:
         response = (
@@ -470,6 +471,7 @@ def send_alert(alert: AlertCreate) -> dict[str, Any]:
     payload = alert.model_dump()
     payload["target_count"] = len(phone_numbers)
     payload["status"] = final_status
+    payload["created_by"] = current_user["username"]
 
     try:
         db_response = supabase.table("alerts").insert(payload).execute()
