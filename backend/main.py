@@ -112,12 +112,42 @@ def sanitize_user(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class ReportCreate(BaseModel):
+    phone: str
+    district: str
+    crop: str
+    symptom: str
+    severity: str = "Low"
+    date: Optional[str] = None
+
+
+def format_report(record: dict[str, Any]) -> dict[str, Any]:
+    status_value = str(record.get("status", "pending")).lower()
+    ui_status = {
+        "pending": "Pending",
+        "verified": "Verified",
+        "rejected": "Rejected",
+    }.get(status_value, status_value.title())
+
+    return {
+        "id": record.get("id"),
+        "phone": record.get("phone", ""),
+        "district": record.get("district", ""),
+        "crop": record.get("crop", ""),
+        "symptom": record.get("symptom", ""),
+        "severity": record.get("severity", "Low"),
+        "date": record.get("date") or record.get("report_date"),
+        "status": ui_status,
+        "created_at": record.get("created_at"),
+    }
+
+
 @app.get("/")
 def read_root() -> dict[str, Any]:
     return {
         "message": "Umoja backend is running",
-        "resources": ["farmers", "alerts", "users"],
-        "reports_enabled": False,
+        "resources": ["farmers", "alerts", "users", "reports"],
+        "reports_enabled": True,
     }
 
 
@@ -178,6 +208,64 @@ def receive_inbound_sms(payload: InboundSMS) -> dict[str, Any]:
         raise_database_error(error)
 
     return {"received": True}
+
+
+@app.post("/reports", status_code=status.HTTP_201_CREATED)
+def create_report(report: ReportCreate) -> dict[str, Any]:
+    payload = report.model_dump()
+    report_date = payload.pop("date", None) or datetime.date.today().isoformat()
+    payload["report_date"] = report_date
+    payload["status"] = "pending"
+
+    try:
+        response = supabase.table("reports").insert(payload).execute()
+    except Exception as error:
+        raise_database_error(error)
+
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create report")
+
+    return format_report(response.data[0])
+
+
+@app.get("/reports")
+def get_reports() -> list[dict[str, Any]]:
+    try:
+        response = supabase.table("reports").select("*").order("id", desc=True).execute()
+    except Exception as error:
+        raise_database_error(error)
+
+    return [format_report(record) for record in (response.data or [])]
+
+
+@app.put("/reports/{report_id}/verify")
+def verify_report(report_id: int) -> dict[str, Any]:
+    get_single_record("reports", report_id)
+
+    try:
+        response = supabase.table("reports").update({"status": "verified"}).eq("id", report_id).execute()
+    except Exception as error:
+        raise_database_error(error)
+
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    return format_report(response.data[0])
+
+
+@app.put("/reports/{report_id}/reject")
+def reject_report(report_id: int) -> dict[str, Any]:
+    get_single_record("reports", report_id)
+
+    try:
+        response = supabase.table("reports").update({"status": "rejected"}).eq("id", report_id).execute()
+    except Exception as error:
+        raise_database_error(error)
+
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    return format_report(response.data[0])
 
 
 # ---------------------------------------------------------------------------

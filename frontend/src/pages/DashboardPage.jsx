@@ -61,7 +61,7 @@ function DashboardPage() {
     await api.post('/alerts', {
       district: report.district,
       message: `Warning for ${report.district}: possible ${report.crop} disease reported. Symptom: ${report.symptom}.`,
-      date: new Date().toISOString().split('T')[0],
+      alert_date: new Date().toISOString().split('T')[0],
     })
 
     fetchAlerts()
