@@ -1,23 +1,11 @@
-function ReportsTable({
-  title = 'Incoming Reports',
-  emptyMessage = 'No reports submitted yet.',
-  reports,
-  selectedReportIds = [],
-  onToggleReport,
-  onVerify,
-  onReject,
-  onEditReport,
-}) {
-  const showSelection = typeof onToggleReport === 'function'
-
+function ReportsTable({ reports, onVerify, onReject, onCreateAlert }) {
   return (
     <div className="card">
-      <h2>{title}</h2>
+      <h2>Incoming Reports</h2>
 
       <table>
         <thead>
           <tr>
-            {showSelection && <th>Select</th>}
             <th>Phone</th>
             <th>District</th>
             <th>Crop</th>
@@ -32,29 +20,13 @@ function ReportsTable({
         <tbody>
           {reports.length === 0 ? (
             <tr>
-              <td colSpan={showSelection ? 9 : 8}>
-                <div className="empty-message">{emptyMessage}</div>
+              <td colSpan="8">
+                <div className="empty-message">No reports submitted yet.</div>
               </td>
             </tr>
           ) : (
             reports.map((report) => (
               <tr key={report.id}>
-                {showSelection && (
-                  <td>
-                    {(() => {
-                      const isRejected = report.status === 'Rejected'
-                      return (
-                    <input
-                      type="checkbox"
-                      checked={selectedReportIds.includes(report.id)}
-                      onChange={() => onToggleReport(report)}
-                      disabled={isRejected}
-                      aria-label={`Select report ${report.id}`}
-                    />
-                      )
-                    })()}
-                  </td>
-                )}
                 <td>{report.phone}</td>
                 <td>{report.district}</td>
                 <td>{report.crop}</td>
@@ -76,10 +48,6 @@ function ReportsTable({
                 </td>
                 <td>
                   <div className="action-buttons">
-                    <button onClick={() => onEditReport(report)}>
-                      Add Details
-                    </button>
-
                     <button
                       onClick={() => onVerify(report.id)}
                       disabled={report.status !== 'Pending'}
@@ -92,6 +60,10 @@ function ReportsTable({
                       disabled={report.status !== 'Pending'}
                     >
                       Reject
+                    </button>
+
+                    <button onClick={() => onCreateAlert(report)}>
+                      Create Alert
                     </button>
                   </div>
                 </td>
