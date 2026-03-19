@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import api, { getStoredToken, setStoredToken } from '../services/api'
+import api, { getStoredToken, isTokenExpired, setStoredToken } from '../services/api'
 
 const AuthContext = createContext(null)
 
@@ -12,6 +12,14 @@ export function AuthProvider({ children }) {
     async function hydrateUser() {
       const storedToken = getStoredToken()
       if (!storedToken) {
+        setLoading(false)
+        return
+      }
+
+      if (isTokenExpired(storedToken)) {
+        setStoredToken(null)
+        setToken(null)
+        setUser(null)
         setLoading(false)
         return
       }

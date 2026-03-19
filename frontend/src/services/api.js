@@ -27,6 +27,34 @@ export function setStoredToken(token) {
   localStorage.setItem(AUTH_TOKEN_KEY, token)
 }
 
+function decodeBase64Url(value) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4)
+  return atob(`${normalized}${padding}`)
+}
+
+export function isTokenExpired(token) {
+  if (!token || typeof token !== 'string') {
+    return true
+  }
+
+  const [payload] = token.split('.')
+  if (!payload) {
+    return true
+  }
+
+  try {
+    const parsed = JSON.parse(decodeBase64Url(payload))
+    const exp = Number(parsed?.exp)
+    if (!Number.isFinite(exp)) {
+      return true
+    }
+    return exp <= Math.floor(Date.now() / 1000)
+  } catch {
+    return true
+  }
+}
+
 api.interceptors.request.use((config) => {
   const token = getStoredToken()
   if (token) {

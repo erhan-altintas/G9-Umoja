@@ -1,8 +1,24 @@
 import { useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+function getErrorMessage(requestError) {
+  if (requestError?.response?.status === 409) {
+    return 'Deze gebruikersnaam bestaat al. Kies een andere gebruikersnaam of log in.'
+  }
+
+  const detail = requestError?.response?.data?.detail
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item?.msg || String(item)).join(' ')
+  }
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail
+  }
+  return 'Registration failed. Try a different username.'
+}
+
 function RegisterPage() {
+  const navigate = useNavigate()
   const { isAuthenticated, register } = useAuth()
   const [formData, setFormData] = useState({
     username: '',
@@ -10,7 +26,6 @@ function RegisterPage() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />
@@ -24,14 +39,23 @@ function RegisterPage() {
     event.preventDefault()
     setSubmitting(true)
     setError('')
-    setSuccessMessage('')
+
+    const payload = {
+      ...formData,
+      username: formData.username.trim(),
+    }
+
+    if (payload.username.length < 3) {
+      setError('Username must be at least 3 characters.')
+      setSubmitting(false)
+      return
+    }
+
     try {
-      const response = await register(formData)
-      setSuccessMessage(
-        response?.message || 'Registration submitted. Email Umoja@cropalert.com so we can verify your account.',
-      )
+      await register(payload)
+      navigate('/dashboard', { replace: true })
     } catch (requestError) {
-      setError(requestError?.response?.data?.detail || 'Registration failed. Try a different username.')
+      setError(getErrorMessage(requestError))
     } finally {
       setSubmitting(false)
     }
@@ -63,7 +87,6 @@ function RegisterPage() {
             minLength={8}
             required
           />
-          {successMessage ? <p className="success-message">{successMessage}</p> : null}
           {error ? <p className="error-message">{error}</p> : null}
           <button type="submit" disabled={submitting}>
             {submitting ? 'Creating account...' : 'Create Account'}
