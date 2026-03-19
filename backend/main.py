@@ -258,6 +258,12 @@ def format_report(record: dict[str, Any]) -> dict[str, Any]:
         if inferred_district != "unknown":
             district_value = inferred_district
 
+    source_value = str(record.get("source") or "").strip().lower()
+    if source_value not in {"sms", "online"}:
+        # Backward compatibility for older rows that were saved without source.
+        # SMS inbound rows typically start with an empty crop and are staff-classified later.
+        source_value = "sms" if str(record.get("crop") or "").strip() == "" else "online"
+
     return {
         "id": record.get("id"),
         "phone": record.get("phone", ""),
@@ -267,6 +273,7 @@ def format_report(record: dict[str, Any]) -> dict[str, Any]:
         "severity": record.get("severity", "Low"),
         "date": record.get("date") or record.get("report_date"),
         "status": ui_status,
+        "source": source_value,
         "created_at": record.get("created_at"),
     }
 
@@ -405,6 +412,7 @@ def persist_inbound_sms(phone: str, message: str, received_at: Optional[str]) ->
         "crop": "",
         "severity": "low",
         "report_date": received_at or datetime.date.today().isoformat(),
+        "source": "sms",
     }
     try:
         supabase.table("reports").insert(record).execute()
@@ -548,6 +556,7 @@ def create_report(report: ReportCreate) -> dict[str, Any]:
     payload["severity"] = severity_value
     payload["report_date"] = report_date
     payload["status"] = "new"
+    payload["source"] = "online"
 
     ensure_farmer_for_report(str(payload.get("phone", "")), str(payload.get("district", "")))
 
