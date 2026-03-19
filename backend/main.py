@@ -241,10 +241,16 @@ def format_report(record: dict[str, Any]) -> dict[str, Any]:
         "resolved": "Verified",
     }.get(status_value, status_value.title())
 
+    district_value = str(record.get("district") or "").strip()
+    if district_value.lower() in {"", "unknown"}:
+        inferred_district = infer_district_from_phone(str(record.get("phone") or ""))
+        if inferred_district != "unknown":
+            district_value = inferred_district
+
     return {
         "id": record.get("id"),
         "phone": record.get("phone", ""),
-        "district": record.get("district", ""),
+        "district": district_value,
         "crop": record.get("crop", ""),
         "symptom": record.get("symptom", ""),
         "raw_message": record.get("raw_message", ""),
@@ -336,20 +342,34 @@ class InboundSMS(BaseModel):
     received_at: Optional[str] = None
 
 
+def infer_district_from_phone(phone: str) -> str:
+    normalized_phone = str(phone or "").strip().replace(" ", "").replace("-", "")
+    if normalized_phone.startswith("+32") or normalized_phone.startswith("0032"):
+        return "Belgium"
+    return "unknown"
+
+
 def persist_inbound_sms(phone: str, message: str, received_at: Optional[str]) -> None:
+    inferred_district = infer_district_from_phone(phone)
+
     # Ensure farmer exists (insert only if phone not found)
     try:
         farmer_lookup = (
             supabase.table("farmers")
-            .select("id")
+            .select("id,district")
             .eq("phone", phone)
             .limit(1)
             .execute()
         )
         if not farmer_lookup.data:
             supabase.table("farmers").insert(
-                {"phone": phone, "district": "unknown", "active": True}
+                {"phone": phone, "district": inferred_district, "active": True}
             ).execute()
+        else:
+            existing_farmer = farmer_lookup.data[0]
+            current_district = str(existing_farmer.get("district") or "").strip().lower()
+            if current_district in {"", "unknown"} and inferred_district != "unknown":
+                supabase.table("farmers").update({"district": inferred_district}).eq("id", existing_farmer["id"]).execute()
     except Exception as error:
         raise_database_error(error)
 
@@ -358,7 +378,7 @@ def persist_inbound_sms(phone: str, message: str, received_at: Optional[str]) ->
         "phone": phone,
         "raw_message": message,
         "symptom": message,
-        "district": "",
+        "district": inferred_district,
         "crop": "",
         "severity": "low",
         "report_date": received_at or datetime.date.today().isoformat(),
@@ -793,6 +813,15 @@ def delete_farmer(farmer_id: int) -> Response:
 @app.get("/alerts", response_model=list[Alert])
 def get_alerts(authorization: Optional[str] = Header(default=None, alias="Authorization")) -> list[dict[str, Any]]:
     require_auth(authorization)
+    try:
+        response = supabase.table("alerts").select("*").order("alert_date", desc=True).execute()
+        return response.data or []
+    except Exception as error:
+        raise_database_error(error)
+
+
+@app.get("/alerts/public", response_model=list[Alert])
+def get_public_alerts() -> list[dict[str, Any]]:
     try:
         response = supabase.table("alerts").select("*").order("alert_date", desc=True).execute()
         return response.data or []
