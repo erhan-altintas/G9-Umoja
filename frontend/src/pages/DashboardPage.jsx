@@ -3,7 +3,6 @@ import api from '../services/api'
 import { enqueueAlert, getAllQueued, dequeueAlert } from '../services/alertQueue'
 import ReportsTable from '../components/ReportsTable'
 import AlertsList from '../components/AlertsList'
-import CreateAlertModal from '../components/CreateAlertModal'
 
 function DashboardPage() {
   const [reports, setReports] = useState([])
@@ -89,39 +88,6 @@ function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    setSelectedReportIds((previous) =>
-      previous.filter((id) => reports.some((report) => report.id === id && report.status !== 'Rejected')),
-    )
-  }, [reports])
-
-  useEffect(() => {
-    async function loadQueueCount() {
-      const queued = await getAllQueued()
-      setQueueCount(queued.length)
-    }
-
-    loadQueueCount()
-  }, [])
-
-  useEffect(() => {
-    async function handleOnline() {
-      setIsOnline(true)
-      await flushQueuedAlerts()
-    }
-
-    function handleOffline() {
-      setIsOnline(false)
-    }
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [])
-
   async function handleVerify(id) {
     try {
       await api.put(`/reports/${id}/verify`)
@@ -193,14 +159,6 @@ function DashboardPage() {
         onCreateAlert={handleCreateAlert}
       />
       <AlertsList alerts={alerts} />
-
-      {alertReport && (
-        <CreateAlertModal
-          report={alertReport}
-          onClose={() => setAlertReport(null)}
-          onSent={handleAlertSent}
-        />
-      )}
     </div>
   )
 }
