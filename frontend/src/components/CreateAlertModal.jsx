@@ -1,20 +1,34 @@
 import { useEffect, useState } from 'react'
 import api from '../services/api'
 
-function CreateAlertModal({ report, onClose, onSent }) {
+function CreateAlertModal({ report, reports, onClose, onSent, onSend, sending = false, error = '' }) {
+  const selectedReports = reports || (report ? [report] : [])
+  const primaryReport = selectedReports[0] || null
   const today = new Date().toISOString().split('T')[0]
-  const district = report?.district || ''
+  const district = primaryReport?.district || ''
 
-  const defaultMessage = report
-    ? `Warning for ${report.district}: a possible ${report.crop} disease has been reported. Symptom observed: "${report.symptom}". Please inspect your crops and contact your local agricultural officer immediately.`
+  const hasMultipleReports = selectedReports.length > 1
+
+  const inferredCrop = primaryReport?.crop || 'crop'
+  const inferredSymptom = primaryReport?.symptom || 'symptom'
+
+  const defaultMessage = primaryReport
+    ? `Warning for ${district}: a possible ${inferredCrop} disease has been reported. Symptom observed: "${inferredSymptom}". Please inspect your crops and contact your local agricultural officer immediately.`
     : ''
 
   const [message, setMessage] = useState(defaultMessage)
   const [alertDate, setAlertDate] = useState(today)
   const [farmerCount, setFarmerCount] = useState(null)
   const [loadingCount, setLoadingCount] = useState(true)
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
+  const [internalSending, setInternalSending] = useState(false)
+  const [localError, setLocalError] = useState('')
+
+  const isSending = Boolean(onSend) ? sending : internalSending
+  const effectiveError = error || localError
+
+  useEffect(() => {
+    setMessage(defaultMessage)
+  }, [defaultMessage])
 
   useEffect(() => {
     if (!district) {
@@ -45,24 +59,34 @@ function CreateAlertModal({ report, onClose, onSent }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setSending(true)
-    setError('')
+
+    const payload = {
+      district,
+      message,
+      alert_date: alertDate,
+      report_ids: selectedReports.map((item) => item.id),
+    }
+
+    if (onSend) {
+      await onSend(payload)
+      return
+    }
+
+    setInternalSending(true)
+    setLocalError('')
+
     try {
-      await api.post('/alerts/send', {
-        district,
-        message,
-        alert_date: alertDate,
-      })
-      onSent()
+      await api.post('/alerts/send', payload)
+      onSent?.()
       onClose()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send alert. Please try again.')
+      setLocalError(err.response?.data?.detail || 'Failed to send alert. Please try again.')
     } finally {
-      setSending(false)
+      setInternalSending(false)
     }
   }
 
-  const sendLabel = sending
+  const sendLabel = isSending
     ? 'Sending…'
     : farmerCount !== null && farmerCount > 0
     ? `Send to ${farmerCount} Farmer${farmerCount !== 1 ? 's' : ''}`
@@ -85,11 +109,13 @@ function CreateAlertModal({ report, onClose, onSent }) {
         {/* Body / Form */}
         <form onSubmit={handleSubmit} className="modal-body">
           {/* Source report badge */}
-          {report && (
+          {primaryReport && (
             <div className="modal-source">
               <span className="modal-source-label">Based on report</span>
               <span className="modal-source-detail">
-                {report.crop} · {report.symptom} · Severity: {report.severity}
+                {hasMultipleReports
+                  ? `${selectedReports.length} reports selected in ${district}`
+                  : `${primaryReport.crop} · ${primaryReport.symptom} · Severity: ${primaryReport.severity}`}
               </span>
             </div>
           )}
@@ -113,20 +139,6 @@ function CreateAlertModal({ report, onClose, onSent }) {
             />
             <span className="char-count">{message.length} / 1000</span>
           </div>
-
-          {requiresManualCrop ? (
-            <div className="form-group">
-              <label htmlFor="alert-manual-crop">Manual Crop (for unknown SMS crop)</label>
-              <input
-                id="alert-manual-crop"
-                type="text"
-                value={manualCrop}
-                onChange={(e) => setManualCrop(e.target.value)}
-                placeholder="Enter crop name (e.g. maize)"
-                required
-              />
-            </div>
-          ) : null}
 
           <div className="form-group">
             <label htmlFor="alert-date">Alert Date</label>
@@ -164,14 +176,14 @@ function CreateAlertModal({ report, onClose, onSent }) {
             <div className="modal-loading-count">Looking up farmers in {district}…</div>
           )}
 
-          {error && <div className="error-message">{error}</div>}
+          {effectiveError && <div className="error-message">{effectiveError}</div>}
 
           {/* Actions */}
           <div className="modal-actions">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={sending}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={isSending}>
               Cancel
             </button>
-            <button type="submit" className="btn-primary" disabled={sending || loadingCount}>
+            <button type="submit" className="btn-primary" disabled={isSending || loadingCount}>
               {sendLabel}
             </button>
           </div>

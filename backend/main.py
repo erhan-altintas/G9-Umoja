@@ -215,6 +215,14 @@ class ReportCreate(BaseModel):
     date: Optional[str] = None
 
 
+class ReportUpdate(BaseModel):
+    district: Optional[str] = None
+    crop: Optional[str] = None
+    symptom: Optional[str] = None
+    severity: Optional[str] = None
+    date: Optional[str] = None
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -563,6 +571,43 @@ def get_reports(authorization: Optional[str] = Header(default=None, alias="Autho
         raise_database_error(error)
 
     return [format_report(record) for record in (response.data or [])]
+
+
+@app.patch("/reports/{report_id}")
+def update_report(
+    report_id: int,
+    payload: ReportUpdate,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> dict[str, Any]:
+    require_auth(authorization)
+    current_report = get_single_record("reports", report_id)
+
+    update_payload = payload.model_dump(exclude_none=True)
+    if not update_payload:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No report fields provided")
+
+    if "severity" in update_payload:
+        normalized_severity = str(update_payload["severity"]).strip().lower()
+        if normalized_severity not in {"low", "medium", "high"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid severity")
+        update_payload["severity"] = normalized_severity
+
+    if "date" in update_payload:
+        update_payload["report_date"] = update_payload.pop("date")
+
+    phone_value = str(current_report.get("phone") or "")
+    district_value = str(update_payload.get("district", current_report.get("district") or ""))
+    ensure_farmer_for_report(phone_value, district_value)
+
+    try:
+        response = supabase.table("reports").update(update_payload).eq("id", report_id).execute()
+    except Exception as error:
+        raise_database_error(error)
+
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    return format_report(response.data[0])
 
 
 @app.put("/reports/{report_id}/verify")
