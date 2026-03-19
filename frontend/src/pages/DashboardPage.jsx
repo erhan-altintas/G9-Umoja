@@ -37,79 +37,6 @@ function DashboardPage() {
     }
   }
 
-  useEffect(() => {
-    fetchReports()
-    fetchAlerts()
-
-    const interval = setInterval(() => {
-      fetchReports()
-      fetchAlerts()
-    }, 5000)
-
-    return () => {
-      clearInterval(interval)
-    }
-  }, [])
-
-  useEffect(() => {
-    setSelectedReportIds((previous) =>
-      previous.filter((id) => reports.some((report) => report.id === id && report.status !== 'Rejected')),
-    )
-  }, [reports])
-
-  useEffect(() => {
-    async function loadQueueCount() {
-      const queued = await getAllQueued()
-      setQueueCount(queued.length)
-    }
-
-    loadQueueCount()
-  }, [])
-
-  useEffect(() => {
-    async function handleOnline() {
-      setIsOnline(true)
-      await flushQueuedAlerts()
-    }
-
-    function handleOffline() {
-      setIsOnline(false)
-    }
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [])
-
-  async function handleVerify(id) {
-    try {
-      await api.put(`/reports/${id}/verify`)
-      fetchReports()
-    } catch (error) {
-      console.error('Error verifying report:', error)
-    }
-  }
-
-  async function handleReject(id) {
-    try {
-      await api.put(`/reports/${id}/reject`)
-      fetchReports()
-    } catch (error) {
-      console.error('Error rejecting report:', error)
-    }
-  }
-
-  function handleEditReport(report) {
-    setEditingReport(report)
-  }
-
-  function handleReportSaved() {
-    fetchReports()
-  }
-
   async function refreshQueueCount() {
     const queued = await getAllQueued()
     setQueueCount(queued.length)
@@ -143,6 +70,72 @@ function DashboardPage() {
     }
   }
 
+  useEffect(() => {
+    fetchReports()
+    fetchAlerts()
+    refreshQueueCount()
+
+    const interval = setInterval(() => {
+      fetchReports()
+      fetchAlerts()
+    }, 5000)
+
+    function handleOnline() {
+      setIsOnline(true)
+      flushQueuedAlerts()
+    }
+
+    function handleOffline() {
+      setIsOnline(false)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    if (navigator.onLine) {
+      flushQueuedAlerts()
+    }
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    setSelectedReportIds((previous) =>
+      previous.filter((id) => reports.some((report) => report.id === id && report.status !== 'Rejected')),
+    )
+  }, [reports])
+
+  async function handleVerify(id) {
+    try {
+      await api.put(`/reports/${id}/verify`)
+      fetchReports()
+    } catch (error) {
+      console.error('Error verifying report:', error)
+    }
+  }
+
+  async function handleReject(id) {
+    try {
+      await api.put(`/reports/${id}/reject`)
+      fetchReports()
+    } catch (error) {
+      console.error('Error rejecting report:', error)
+    }
+  }
+
+  function handleEditReport(report) {
+    setEditingReport(report)
+  }
+
+  function handleReportSaved() {
+    fetchReports()
+  }
+
   async function handleClearQueuedAlerts() {
     await clearQueue()
     await refreshQueueCount()
@@ -168,12 +161,24 @@ function DashboardPage() {
     setAlertReports(selectedReports)
   }
 
+  function openCreateAlertForReport(report) {
+    if (!report) {
+      return
+    }
+    setModalError('')
+    setAlertReports([report])
+  }
+
   async function handleSendAlert(alertData) {
     setModalSending(true)
     setModalError('')
 
     try {
-      await api.post('/alerts/send', alertData)
+      await api.post('/alerts/send', {
+        district: alertData.district,
+        message: alertData.message,
+        alert_date: alertData.alert_date,
+      })
       setAlertReports([])
       setSelectedReportIds((previous) => previous.filter((id) => !alertData.report_ids.includes(id)))
       fetchAlerts()
@@ -181,7 +186,11 @@ function DashboardPage() {
       await refreshQueueCount()
     } catch (error) {
       if (!error?.response) {
-        await enqueueAlert(alertData)
+        await enqueueAlert({
+          district: alertData.district,
+          message: alertData.message,
+          alert_date: alertData.alert_date,
+        })
         await refreshQueueCount()
         setAlertReports([])
         setSelectedReportIds([])
@@ -255,6 +264,7 @@ function DashboardPage() {
         onToggleReport={toggleReportSelection}
         onVerify={handleVerify}
         onReject={handleReject}
+        onCreateAlert={openCreateAlertForReport}
         onEditReport={handleEditReport}
       />
 
@@ -266,6 +276,7 @@ function DashboardPage() {
         onToggleReport={toggleReportSelection}
         onVerify={handleVerify}
         onReject={handleReject}
+        onCreateAlert={openCreateAlertForReport}
         onEditReport={handleEditReport}
       />
       <AlertsList alerts={alerts} />
